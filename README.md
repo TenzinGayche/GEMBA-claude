@@ -8,25 +8,20 @@ Install required packages with python >= 3.8
 pip install -r requirements.txt
 ```
 
-Set up secrets either for Azure API or OpenAI API: 
+Set up secrets either for Anthorpic: 
 
 ```
-export OPENAI_AZURE_ENDPOINT=
-export OPENAI_AZURE_KEY=
+api_key="[API]" 
 ```
 
-or
 
-```
-export OPENAI_API_KEY=
-```
 
 ## Scoring with GEMBA
 
 It assumes two files with the same number of lines. It prints the score for each line pair:
 
 ```
-python main.py --source=source.txt --hypothesis=hypothesis.txt --source_lang=English --target_lang=Czech --method="GEMBA-MQM" --model="gpt-4"
+python main.py --source=source.txt --hypothesis=hypothesis.txt --source_lang=English --target_lang=Czech --method="GEMBA-MQM" --model="claude-3-5-sonnet-latest"
 ```
 
 The main recommended methods: `GEMBA-MQM` and `GEMBA-DA` with the model `gpt-4`.

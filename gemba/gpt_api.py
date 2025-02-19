@@ -7,31 +7,14 @@ from termcolor import colored
 from datetime import datetime
 import openai
 import tqdm
-
+from anthropic import Anthropic
 
 # class for calling OpenAI API and handling cache
 class GptApi:
     def __init__(self, verbose=False):
-        self.verbose = verbose
-
-        if "OPENAI_AZURE_ENDPOINT" in os.environ:
-            assert "OPENAI_AZURE_KEY" in os.environ, "OPENAI_AZURE_KEY not found in environment"
-
-            # Azure API access
-            self.client = openai.AzureOpenAI(
-                api_key=os.environ["OPENAI_AZURE_KEY"],
-                azure_endpoint=os.environ["OPENAI_AZURE_ENDPOINT"],
-                api_version="2023-07-01-preview"
-            )
-        elif "OPENAI_API_KEY" in os.environ:
-            # OpenAI API access
-            self.client = openai.OpenAI(
-                api_key=os.environ["OPENAI_API_KEY"]
-            )
-        else:
-            raise Exception("OPENAI_API_KEY or OPENAI_AZURE_KEY not found in environment")
-
-        logging.getLogger().setLevel(logging.CRITICAL)  # in order to suppress all these HTTP INFO log messages
+        self.client = Anthropic(
+    api_key=""  # This is the default and can be omitted
+) # in order to suppress all these HTTP INFO log messages
 
     # answer_id is used for determining if it was the top answer or how deep in the list it was
     def request(self, prompt, model, parse_response, temperature=0, answer_id=-1, cache=None, max_tokens=None):
@@ -60,7 +43,7 @@ class GptApi:
             full_answer = full_answer["answer"]
             answer_id += 1
             answer = parse_response(full_answer)
-            if self.verbose or temperature > 0:
+            if temperature > 0:
                 print(f"Answer (t={temperature}): " + colored(answer, "yellow") + " (" + colored(full_answer, "blue") + ")", file=sys.stderr)
             if answer is None:
                 continue
@@ -104,27 +87,11 @@ class GptApi:
                 time.sleep(1)
 
         answers = []
-        for choice in response.choices:
-            if choice.message.content is None:
-                return []
-            if hasattr(choice, "message"):
-                answer = choice.message.content.strip()
-            else:
-                answer = choice.text.strip()
-                
-            # one of the responses didn't finish, we need to request more tokens
-            if choice.finish_reason != "stop":
-                if self.verbose:
-                    print(colored(f"Increasing max tokens to fit answers.", "red") + colored(answer, "blue"), file=sys.stderr)
-                print(f"Finish reason: {choice.finish_reason}", file=sys.stderr)
-                if max_tokens is None:
-                    return []
-                return self.request_api(prompt, model, temperature=temperature, max_tokens=max_tokens + 200)
 
-            answers.append({
-                "answer": answer,
-                "finish_reason": choice.finish_reason,
-            })
+        answers.append({
+            "answer": response[0]["answer"],
+            "finish_reason": response[0]["answer"],
+        })
 
         if len(answers) > 1:
             # remove duplicate answers
@@ -134,36 +101,29 @@ class GptApi:
 
     def call_api(self, prompt, model, temperature, max_tokens):
         parameters = {
-            "temperature": temperature/10,
-            "top_p": 1,
-            "n": 1,
-            "frequency_penalty": 0,
-            "presence_penalty": 0,
-            "stop": None,
-            "model": model
+            "model": model,
+            "temperature": temperature,
+            "max_tokens": max_tokens if max_tokens else 1024,  # Default to 1024 tokens
+            "system": "You are an annotator for the quality of machine translation. Your task is to identify errors and assess the quality of the translation.",
+
+            "messages": prompt,
         }
 
-        if max_tokens is not None:
-            parameters["max_tokens"] = max_tokens
+        response = self.client.messages.create(**parameters)
+        
+        answer = response.content[0].text.strip()  # Extract response correctly
 
-        if isinstance(prompt, list):
-            # check that prompt contain list of dictionaries with role and content
-            assert all(isinstance(p, dict) for p in prompt), "Prompts must be a list of dictionaries."
-            assert all("role" in p and "content" in p for p in prompt), "Prompts must be a list of dictionaries with role and content."
+        return [{
+            "answer": answer,
+            "finish_reason": response.stop_reason,  # Correct key for Claude's API
+        }]
 
-            parameters["messages"] = prompt
-        else:
-            parameters["messages"] = [{
-                "role": "user",
-                "content": prompt,
-            }]
-
-        return self.client.chat.completions.create(**parameters)
-    
+            
     def bulk_request(self, df, model, parse_mqm_answer, cache, max_tokens=None):
         answers = []
         for i, row in tqdm.tqdm(df.iterrows(), total=len(df), file=sys.stderr):
             prompt = row["prompt"]
             parsed_answers = self.request(prompt, model, parse_mqm_answer, cache=cache, max_tokens=max_tokens)
             answers += parsed_answers
+        print(answers)
         return answers

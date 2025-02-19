@@ -90,48 +90,67 @@ def parse_mqm_answer(x, list_mqm_errors=False, full_desc=True):
         except:
             x = parse_broken_json(x)
         errors = x["errors"]
-
-
     else:
         x = x.lower()
         errors = {'critical': [], 'major': [], 'minor': []}
         error_level = None
-        for line in x.split('\n'):
+        section_errors = {
+            'critical': False,
+            'major': False,
+            'minor': False
+        }
+        
+        # Split by any number of consecutive newlines
+        import re
+        lines = re.split(r'\n+', x)
+        
+        for line in lines:
             line = line.strip()
-            if "no-error" in line or "no error" in line or "" == line:
+            
+            if not line:
                 continue
-            if "critical:" == line:
-                error_level = "critical"
+                
+            if line.endswith(':'):
+                current_section = line[:-1].lower()
+                if current_section in ['critical', 'major', 'minor']:
+                    error_level = current_section
                 continue
-            elif "major:" == line:
-                error_level = "major"
-                continue
-            elif "minor:" == line:
-                error_level = "minor"
-                continue
-
-            if "critical" in line or "major" in line or "minor" in line:
-                if not any([line.startswith(x) for x in ['accuracy', 'fluency', 'locale convention', 'style', 'terminology', 'non-translation', 'other']]):
-                    print(line)
-
-            if error_level is None:
-                print(f"No error level for {line}")
-                continue
-
-            if "non-translation" in line:
-                errors["critical"].append(line)
-            else:
-                errors[error_level].append(line)
+            
+            if error_level is not None:
+                if "no-error" in line or "no error" in line:
+                    continue
+                
+                if any(phrase in line for phrase in [
+                    "the translation appears to be",
+                    "it correctly conveys",
+                    "the grammar and terminology",
+                    "there are no obvious errors"
+                ]):
+                    continue
+                    
+                if "non-translation" in line:
+                    errors["critical"].append(line)
+                    section_errors['critical'] = True
+                elif line:
+                    errors[error_level].append(line)
+                    section_errors[error_level] = True
 
     error_classes = defaultdict(list)
     final_score = 0
     error_counter = 0
+    
     for error_level in ['critical', 'major', 'minor']:
         if error_level not in errors:
-                continue
+            continue
+            
         for error in errors[error_level]:
-            if error_counter < 5 and not list_mqm_errors:
-                final_score += 25 if error_level == 'critical' else 5 if error_level == 'major' else 1
+            if error_counter < 5 and not list_mqm_errors and section_errors[error_level]:
+                if error_level == 'critical':
+                    final_score += 25
+                elif error_level == 'major':
+                    final_score += 5
+                else:
+                    final_score += 1
                 error_counter += 1
 
             if full_desc:
@@ -139,22 +158,17 @@ def parse_mqm_answer(x, list_mqm_errors=False, full_desc=True):
             else:
                 class_name = parse_error_class(error)
                 error_classes[error_level].append(class_name)
+                    
     if final_score > 25:
         final_score = 25
 
     if list_mqm_errors:
         return error_classes
     else:
-        # negative score is to normalize that higher score is better
         return -final_score
-
 
 def mqm_fewshot(few_shots):
     prompts = [
-        {
-            "role": "system",
-            "content": f"You are an annotator for the quality of machine translation. Your task is to identify errors and assess the quality of the translation."
-        }
     ]
 
     template = """{source_lang} source:

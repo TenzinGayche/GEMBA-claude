@@ -6,3 +6,4 @@ scipy
 ipdb
 absl-py
 diskcache
+anthropic

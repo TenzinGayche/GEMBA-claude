@@ -43,8 +43,17 @@ def main(argv):
 
     answers = get_gemba_scores(source, hypothesis, FLAGS.source_lang, FLAGS.target_lang, FLAGS.method, FLAGS.model)
 
-    for answer in answers:
-        print(answer)
+    # save the results to a text file
+    with open(f"results.txt", 'w') as f:
+        for answer,source,hypothesis in zip(answers,source,hypothesis):
+            f.write(f"{source}\t{hypothesis}\t{answer}\n")
+
+    
+
+    
+
+
+
 
 if __name__ == "__main__":
     app.run(main)
